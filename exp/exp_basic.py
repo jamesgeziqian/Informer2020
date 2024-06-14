@@ -1,6 +1,6 @@
 import os
 import torch
-import numpy as np
+
 
 class Exp_Basic(object):
     def __init__(self, args):
@@ -10,16 +10,20 @@ class Exp_Basic(object):
 
     def _build_model(self):
         raise NotImplementedError
-        return None
-    
+
     def _acquire_device(self):
-        if self.args.use_gpu:
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.args.gpu) if not self.args.use_multi_gpu else self.args.devices
-            device = torch.device('cuda:{}'.format(self.args.gpu))
-            print('Use GPU: cuda:{}'.format(self.args.gpu))
+        if self.args.use_gpu and torch.cuda.is_available():
+            os.environ["CUDA_VISIBLE_DEVICES"] = (
+                str(self.args.gpu) if not self.args.use_multi_gpu else self.args.devices
+            )
+            device = torch.device("cuda:{}".format(self.args.gpu))
+            print("Use GPU: cuda:{}".format(self.args.gpu))
+        elif self.args.use_gpu and torch.backends.mps.is_available():
+            device = torch.device("mps")
+            print(f"Use GPU: mps:{self.args.gpu}")
         else:
-            device = torch.device('cpu')
-            print('Use CPU')
+            device = torch.device("cpu")
+            print("Use CPU")
         return device
 
     def _get_data(self):
@@ -33,4 +37,3 @@ class Exp_Basic(object):
 
     def test(self):
         pass
-    
