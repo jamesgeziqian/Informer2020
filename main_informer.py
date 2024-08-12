@@ -1,5 +1,7 @@
 import argparse
 import datetime as dt
+
+import pandas as pd
 import torch
 
 from exp.exp_informer import Exp_Informer
@@ -39,6 +41,18 @@ parser.add_argument(
     type=str,
     default="./checkpoints/",
     help="location of model checkpoints",
+)
+parser.add_argument(
+    "--use_checkpoint",
+    type=str,
+    default=None,
+    help="use the checkpoint specified as the start point",
+)
+parser.add_argument(
+    "--direct_pred",
+    action="store_true",
+    default=False,
+    help="skipping the training phase and directly make predictions. Must be used accompanied with use_checkpoint.",
 )
 
 parser.add_argument(
@@ -145,6 +159,23 @@ parser.add_argument(
     help="feed val and test data as training data at the very end",
     default=False,
 )
+parser.add_argument(
+    "--retrain_epochs",
+    type=str,
+    help=(
+        "num of epochs to retrain, could be any positive int or one of the following:"
+        ' "end" for retraining till early stopping; "auto" for the same num of epochs when training'
+    ),
+    default="1",
+)
+parser.add_argument(
+    "--pred_strt",
+    type=str,
+)
+parser.add_argument(
+    "--pred_end",
+    type=str,
+)
 
 args = parser.parse_args()
 
@@ -221,6 +252,11 @@ args.s_layers = [int(s_l) for s_l in args.s_layers.replace(" ", "").split(",")]
 args.detail_freq = args.freq
 args.freq = args.freq[-1:]
 
+pred_len_input = args.pred_len
+if args.pred_strt and args.pred_end:
+    args.pred_len = len(pd.date_range(args.pred_strt, args.pred_end, freq=args.freq))
+    print(f"actual pred_len: {args.pred_len}")
+
 print("Args in experiment:")
 print(args)
 
@@ -230,24 +266,28 @@ for ii in range(args.itr):
     # setting record of experiments
     setting = (
         f"{args.tag or dt.datetime.now().strftime('%Y%m%d_%H%M%S')}_{args.model}_{args.data}_ft{args.features}"
-        f"_sl{args.seq_len}_ll{args.label_len}_pl{args.pred_len}_dm{args.d_model}_nh{args.n_heads}_el{args.e_layers}"
+        f"_sl{args.seq_len}_ll{args.label_len}_pl{pred_len_input}_dm{args.d_model}_nh{args.n_heads}_el{args.e_layers}"
         f"_dl{args.d_layers}_df{args.d_ff}_at{args.attn}_fc{args.factor}_eb{args.embed}_dt{args.distil}_mx{args.mix}"
         f"_{args.des}_{ii}"
     )
 
     exp = Exp(args)  # set experiments
-    print(">>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>".format(setting))
-    exp.train(setting)
+    if args.use_checkpoint:
+        exp.load(setting)
 
-    print(">>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(setting))
-    exp.test(setting)
+    if not args.direct_pred:
+        print(f">>>>>>>start training : {setting}>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        exp.train(setting)
 
-    if args.retrain:
-        print(">>>>>>>retraining : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(setting))
-        exp.retrain(setting)
+        print(f">>>>>>>testing : {setting}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+        exp.test(setting)
+
+        if args.retrain:
+            print(f">>>>>>>retraining : {setting}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+            exp.retrain(setting)
 
     if args.do_predict:
-        print(">>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(setting))
+        print(f">>>>>>>predicting : {setting}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
         exp.predict(setting, True)
 
     torch.cuda.empty_cache()

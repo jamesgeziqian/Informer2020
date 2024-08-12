@@ -1,6 +1,8 @@
 import os
+from typing import Optional
 import numpy as np
 import pandas as pd
+from pandas.tseries.offsets import BDay
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -16,9 +18,11 @@ warnings.filterwarnings("ignore")
 
 
 class Dataset_ETT_hour(Dataset):
+
     def __init__(
         self,
-        root_path,
+        df: Optional[pd.DataFrame] = None,
+        root_path=None,
         flag="train",
         size=None,
         features="S",
@@ -29,6 +33,8 @@ class Dataset_ETT_hour(Dataset):
         timeenc=0,
         freq="h",
         cols=None,
+        pred_strt=None,
+        pred_end=None,
     ):
         # size [seq_len, label_len, pred_len]
         # info
@@ -44,6 +50,7 @@ class Dataset_ETT_hour(Dataset):
         assert flag in ["train", "test", "val"]
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
+        assert df is not None or root_path
 
         self.features = features
         self.target = target
@@ -52,13 +59,17 @@ class Dataset_ETT_hour(Dataset):
         self.timeenc = timeenc
         self.freq = freq
 
+        self.df = df
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
 
     def __read_data__(self):
         self.scaler = StandardScaler()
-        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        fp = os.path.join(self.root_path or "", self.data_path or "")
+        df_raw = (
+            self.df if self.df is not None else pd.read_csv(fp, parse_dates=["date"])
+        ).sort_values("date")
 
         border1s = [
             0,
@@ -127,9 +138,11 @@ class Dataset_ETT_hour(Dataset):
 
 
 class Dataset_ETT_minute(Dataset):
+
     def __init__(
         self,
-        root_path,
+        df: pd.DataFrame = None,
+        root_path=None,
         flag="train",
         size=None,
         features="S",
@@ -140,6 +153,8 @@ class Dataset_ETT_minute(Dataset):
         timeenc=0,
         freq="t",
         cols=None,
+        pred_strt=None,
+        pred_end=None,
     ):
         # size [seq_len, label_len, pred_len]
         # info
@@ -155,6 +170,7 @@ class Dataset_ETT_minute(Dataset):
         assert flag in ["train", "test", "val"]
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
+        assert df is not None or root_path
 
         self.features = features
         self.target = target
@@ -163,14 +179,17 @@ class Dataset_ETT_minute(Dataset):
         self.timeenc = timeenc
         self.freq = freq
 
+        self.df = df
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
 
     def __read_data__(self):
         self.scaler = StandardScaler()
-        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
-
+        fp = os.path.join(self.root_path or "", self.data_path or "")
+        df_raw = (
+            self.df if self.df is not None else pd.read_csv(fp, parse_dates=["date"])
+        ).sort_values("date")
         border1s = [
             0,
             12 * 30 * 24 * 4 - self.seq_len,
@@ -238,9 +257,11 @@ class Dataset_ETT_minute(Dataset):
 
 
 class Dataset_Custom(Dataset):
+
     def __init__(
         self,
-        root_path,
+        df: pd.DataFrame = None,
+        root_path=None,
         flag="train",
         size=None,
         features="S",
@@ -251,6 +272,8 @@ class Dataset_Custom(Dataset):
         timeenc=0,
         freq="h",
         cols=None,
+        pred_strt=None,
+        pred_end=None,
     ):
         # size [seq_len, label_len, pred_len]
         # info
@@ -266,6 +289,7 @@ class Dataset_Custom(Dataset):
         assert flag in ["train", "test", "val", "retrain"]
         type_map = {"train": 0, "val": 1, "test": 2, "retrain": 3}
         self.set_type = type_map[flag]
+        assert df is not None or root_path
 
         self.features = features
         self.target = target
@@ -274,13 +298,17 @@ class Dataset_Custom(Dataset):
         self.timeenc = timeenc
         self.freq = freq
         self.cols = cols
+        self.df = df
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
 
     def __read_data__(self):
         self.scaler = StandardScaler()
-        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        fp = os.path.join(self.root_path or "", self.data_path or "")
+        df_raw = (
+            self.df if self.df is not None else pd.read_csv(fp, parse_dates=["date"])
+        ).sort_values("date")
         """
         df_raw.columns: ['date', ...(other features), target feature]
         """
@@ -363,7 +391,8 @@ class Dataset_Custom(Dataset):
 class Dataset_Pred(Dataset):
     def __init__(
         self,
-        root_path,
+        df: pd.DataFrame = None,
+        root_path=None,
         flag="pred",
         size=None,
         features="S",
@@ -374,6 +403,8 @@ class Dataset_Pred(Dataset):
         timeenc=0,
         freq="15min",
         cols=None,
+        pred_strt=None,
+        pred_end=None,
     ):
         # size [seq_len, label_len, pred_len]
         # info
@@ -385,8 +416,12 @@ class Dataset_Pred(Dataset):
             self.seq_len = size[0]
             self.label_len = size[1]
             self.pred_len = size[2]
+        self.pred_strt = pd.to_datetime(pred_strt)
+        self.pred_end = pd.to_datetime(pred_end)
+        self.bdays_only = freq.upper() == "B"
         # init
         assert flag in ["pred"]
+        assert df is not None or root_path
 
         self.features = features
         self.target = target
@@ -395,13 +430,19 @@ class Dataset_Pred(Dataset):
         self.timeenc = timeenc
         self.freq = freq
         self.cols = cols
+        self.df = df
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
 
     def __read_data__(self):
         self.scaler = StandardScaler()
-        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        fp = os.path.join(self.root_path or "", self.data_path or "")
+        df_raw = (
+            (self.df if self.df is not None else pd.read_csv(fp, parse_dates=["date"]))
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
         """
         df_raw.columns: ['date', ...(other features), target feature]
         """
@@ -414,8 +455,36 @@ class Dataset_Pred(Dataset):
             cols.remove("date")
         df_raw = df_raw[["date"] + cols + [self.target]]
 
-        border1 = len(df_raw) - self.seq_len
-        border2 = len(df_raw)
+        def data_strt(pred_strt: pd.Timestamp, date_range: pd.Series, seq_len: int):
+            # data starting point is one sequence before the prediction start
+            # if data is not sufficient for given pred_strt,
+            if pred_strt < date_range.iloc[seq_len] or pred_strt > date_range.iloc[-1]:
+                raise ValueError(
+                    f"Not enough data given pred_strt: {pred_strt}, seq_len: {seq_len}"
+                )
+            # in case of gaps
+            return date_range[date_range >= pred_strt].index[0] - seq_len
+
+        def data_end(pred_strt: pd.Timestamp, date_range: pd.Series, seq_len: int):
+            if pred_strt < date_range.iloc[seq_len]:
+                raise ValueError(
+                    f"Not enough data given pred_end: {pred_strt}, seq_len: {seq_len}"
+                )
+            if pred_strt > date_range.iloc[-1]:
+                return len(date_range)
+            # in case of gaps
+            return date_range[date_range < pred_strt].index[-1] + 1
+
+        border1 = (
+            data_strt(self.pred_strt, df_raw["date"], self.seq_len)
+            if self.pred_strt
+            else (len(df_raw) - self.seq_len)
+        )
+        border2 = (
+            data_end(self.pred_strt, df_raw["date"], self.seq_len)
+            if self.pred_strt
+            else len(df_raw)
+        )
 
         if self.features == "M" or self.features == "MS":
             cols_data = df_raw.columns[1:]
@@ -430,10 +499,21 @@ class Dataset_Pred(Dataset):
             data = df_data.values
 
         tmp_stamp = df_raw[["date"]][border1:border2]
-        tmp_stamp["date"] = pd.to_datetime(tmp_stamp.date)
-        pred_dates = pd.date_range(
-            tmp_stamp.date.values[-1], periods=self.pred_len + 1, freq=self.freq
+        # tmp_stamp["date"] = pd.to_datetime(tmp_stamp.date)
+        pred_strt = (
+            (self.pred_strt - (BDay(1) if self.bdays_only else pd.Timedelta(days=1)))
+            if self.pred_strt
+            else tmp_stamp.date.values[-1]
         )
+        pred_end = self.pred_end or (
+            pred_strt
+            + (
+                BDay(self.pred_len)
+                if self.bdays_only
+                else pd.Timedelta(days=self.pred_len + 1)
+            )
+        )
+        pred_dates = pd.date_range(pred_strt, pred_end, freq=self.freq)
 
         df_stamp = pd.DataFrame(columns=["date"])
         df_stamp.date = list(tmp_stamp.date.values) + list(pred_dates[1:])

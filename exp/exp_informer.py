@@ -11,7 +11,6 @@ from utils.tools import EarlyStopping, adjust_learning_rate
 from utils.metrics import metric
 
 import numpy as np
-
 import torch
 import torch.nn as nn
 from torch import optim
@@ -101,6 +100,7 @@ class Exp_Informer(Exp_Basic):
             batch_size = args.batch_size
             freq = args.freq
         data_set = Data(
+            df=args.df,
             root_path=args.root_path,
             data_path=args.data_path,
             flag=flag,
@@ -111,6 +111,8 @@ class Exp_Informer(Exp_Basic):
             timeenc=timeenc,
             freq=freq,
             cols=args.cols,
+            pred_strt=args.pred_strt,
+            pred_end=args.pred_end,
         )
         print(flag, len(data_set))
         data_loader = DataLoader(
@@ -224,6 +226,7 @@ class Exp_Informer(Exp_Basic):
                 break
 
             adjust_learning_rate(model_optim, epoch + 1, self.args)
+            self.epochs_spent = epoch
 
         best_model_path = path + "/" + "checkpoint.pth"
         self.model.load_state_dict(torch.load(best_model_path))
@@ -251,7 +254,15 @@ class Exp_Informer(Exp_Basic):
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
-        for epoch in range(self.args.train_epochs):
+        num_epochs = self.args.train_epochs
+        if self.args.retrain_epochs == "auto":
+            num_epochs = self.epochs_spent or num_epochs
+        elif self.args.retrain_epochs.isdigit():
+            num_epochs = int(self.args.retrain_epochs)
+        elif self.args.retrain_epochs != "end":
+            raise ValueError("Invalid num of epochs to retrain.")
+
+        for epoch in range(num_epochs):
             iter_count = 0
             train_loss = []
 
@@ -339,6 +350,11 @@ class Exp_Informer(Exp_Basic):
         np.save(folder_path + "true.npy", trues)
 
         return
+
+    def load(self, setting):
+        path = os.path.join(self.args.checkpoints, setting)
+        best_model_path = path + "/" + "checkpoint.pth"
+        self.model.load_state_dict(torch.load(best_model_path))
 
     def predict(self, setting, load=False, save=True):
         pred_data, pred_loader = self._get_data(flag="pred")
